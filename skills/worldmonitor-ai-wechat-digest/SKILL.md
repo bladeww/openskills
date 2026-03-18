@@ -8,9 +8,11 @@ description: Fetch the latest 24-hour AI news from World Monitor, rewrite it int
 Use this skill when the user wants a 24-hour AI news post for a WeChat Official Account. The workflow is opinionated and should stay narrow:
 
 1. Fetch and normalize the last 24 hours of AI news from World Monitor.
-2. Rewrite the source material into an `AI新信息` style Chinese public-account post with a strong lead, a fast-scan section, and concise takeaways.
-3. Render the draft into WeChat-compatible HTML.
-4. Publish the article to the WeChat Official Account draft box with the official draft API.
+2. Fetch candidate images from the selected source pages by extracting `og:image` / `twitter:image` and cache them locally.
+3. Rewrite the source material into an `AI新信息` style Chinese public-account post with a strong lead, a fast-scan section, and concise takeaways.
+4. Select one cover image and 1-2 body images from the cached candidates.
+5. Render the draft into WeChat-compatible HTML.
+6. Publish the article to the WeChat Official Account draft box with the official draft API.
 
 ## Inputs
 
@@ -36,6 +38,31 @@ Read the generated files before writing:
 
 - `worldmonitor_ai_news.json`
 - `source_brief.md`
+
+### 1.5 Fetch source-page image candidates
+
+Run:
+
+```powershell
+node scripts/fetch_source_images.mjs <run-dir>
+```
+
+This fetches `og:image` / `twitter:image` from the original news pages, downloads the candidate images into `<run-dir>/images/`, and writes:
+
+- `image_candidates.json`
+- `image_candidates.md`
+
+Use this step before writing the article whenever you want higher-quality image selection.
+
+Image policy:
+
+- Do not put the cover image into the body by default.
+- Use the cached candidates as a review set.
+- Let the agent choose:
+  - 1 cover image for frontmatter `cover`
+  - 1-2 body images for the most relevant sections
+- Prefer images that are visually strong and clearly tied to the article's main topics.
+- Avoid logos, default site images, tiny images, and decorative images that do not add information.
 
 ### 2. Rewrite into article markdown
 
@@ -83,6 +110,10 @@ Writing rules:
 - Cut repeated explanation. If a sentence can be shorter without losing meaning, shorten it.
 - Avoid fabricating facts that are not in the source brief.
 - Translate source item titles into natural Chinese in the final `来源` section, while keeping the original links.
+- If `image_candidates.md` exists, review the cached source-page images and manually choose the most relevant cover and body images.
+- Use the selected cover only in frontmatter `cover`.
+- Do not insert the cover image into the article body unless the user explicitly asks for that style.
+- Insert 1-2 body images only when they genuinely improve the article.
 
 Recommended structure:
 

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const TOKEN_URL = "https://api.weixin.qq.com/cgi-bin/token";
@@ -110,15 +111,68 @@ async function fetchAccessToken(appId, appSecret) {
   return data.access_token;
 }
 
+function shouldForceJpeg(contentType, filename) {
+  const lowerType = String(contentType || "").toLowerCase();
+  const lowerName = String(filename || "").toLowerCase();
+  if (lowerType.includes("jpeg") || lowerType.includes("jpg")) return false;
+  if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) return false;
+  return true;
+}
+
+function convertBufferToJpeg(fileBuffer, filename, options = {}) {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wechat-img-'));
+  const inputPath = path.join(tmpDir, filename || 'input.bin');
+  const outputPath = path.join(tmpDir, 'converted.jpg');
+  fs.writeFileSync(inputPath, fileBuffer);
+  const maxWidth = Number(options.maxWidth) || 0;
+  const targetRatio = Number(options.targetRatio) || 0;
+  const script = [
+    'from PIL import Image, ImageOps',
+    'import sys',
+    'src, dst, max_width, target_ratio = sys.argv[1], sys.argv[2], int(sys.argv[3]), float(sys.argv[4])',
+    'img = Image.open(src)',
+    'if img.mode not in ("RGB", "L"):',
+    '    img = img.convert("RGB")',
+    'elif img.mode == "L":',
+    '    img = img.convert("RGB")',
+    'w, h = img.size',
+    'if target_ratio > 0 and w > 0 and h > 0:',
+    '    current_ratio = w / h',
+    '    if current_ratio > target_ratio:',
+    '        new_w = int(h * target_ratio)',
+    '        left = max(0, (w - new_w) // 2)',
+    '        img = img.crop((left, 0, left + new_w, h))',
+    '    elif current_ratio < target_ratio:',
+    '        new_h = int(w / target_ratio)',
+    '        top = max(0, (h - new_h) // 2)',
+    '        img = img.crop((0, top, w, top + new_h))',
+    'if max_width > 0 and img.size[0] > max_width:',
+    '    new_h = int(img.size[1] * (max_width / img.size[0]))',
+    '    img = img.resize((max_width, new_h))',
+    'img.save(dst, format="JPEG", quality=92, optimize=True)',
+  ].join('\n');
+  const result = spawnSync('python3', ['-c', script, inputPath, outputPath, String(maxWidth), String(targetRatio)], { encoding: 'utf8' });
+  if (result.status !== 0 || !fs.existsSync(outputPath)) {
+    throw new Error(`Image conversion failed: ${result.stderr || result.stdout || result.status}`);
+  }
+  const converted = fs.readFileSync(outputPath);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+  return { fileBuffer: converted, filename: `${path.parse(filename || 'image').name}.jpg`, contentType: 'image/jpeg' };
+}
+
+function normalizeWechatCover(fileBuffer, filename) {
+  return convertBufferToJpeg(fileBuffer, filename || 'cover.jpg', { maxWidth: 900, targetRatio: 900 / 383 });
+}
+
 async function uploadImage(imagePath, accessToken, baseDir) {
-  return uploadMultipartImage(imagePath, accessToken, baseDir, `${UPLOAD_URL}?access_token=${accessToken}&type=image`, false);
+  return uploadMultipartImage(imagePath, accessToken, baseDir, `${UPLOAD_URL}?access_token=${accessToken}&type=image`, false, { forceWechatCover: true });
 }
 
 async function uploadArticleImage(imagePath, accessToken, baseDir) {
   return uploadMultipartImage(imagePath, accessToken, baseDir, `${UPLOAD_ARTICLE_IMAGE_URL}?access_token=${accessToken}`, true);
 }
 
-async function uploadMultipartImage(imagePath, accessToken, baseDir, endpoint, returnUrl) {
+async function uploadMultipartImage(imagePath, accessToken, baseDir, endpoint, returnUrl, options = {}) {
   let fileBuffer;
   let filename;
   let contentType;
@@ -144,7 +198,23 @@ async function uploadMultipartImage(imagePath, accessToken, baseDir, endpoint, r
     fileBuffer = fs.readFileSync(resolved);
     filename = path.basename(resolved);
     const ext = path.extname(filename).toLowerCase();
-    contentType = ext === ".jpg" || ext === ".jpeg" ? "image/jpeg" : "image/png";
+    if (ext === '.jpg' || ext === '.jpeg') {
+      contentType = 'image/jpeg';
+    } else if (ext === '.png') {
+      contentType = 'image/png';
+    } else if (ext === '.gif') {
+      contentType = 'image/gif';
+    } else if (ext === '.webp') {
+      contentType = 'image/webp';
+    } else {
+      contentType = 'application/octet-stream';
+    }
+  }
+
+  if (options.forceWechatCover) {
+    ({ fileBuffer, filename, contentType } = normalizeWechatCover(fileBuffer, filename));
+  } else if (shouldForceJpeg(contentType, filename)) {
+    ({ fileBuffer, filename, contentType } = convertBufferToJpeg(fileBuffer, filename));
   }
 
   const boundary = `----CodexBoundary${Date.now().toString(16)}`;

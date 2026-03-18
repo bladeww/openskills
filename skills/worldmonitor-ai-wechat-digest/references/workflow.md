@@ -50,6 +50,8 @@ This skill is intentionally narrow. The article should feel like a polished Chin
 - Keep paragraphs short.
 - Use highlight callouts sparingly.
 - Source list should remain clickable.
+- Keep the cover image separate from the body.
+- Use body images only when they are selected from the cached source-page image candidates and clearly support the nearby section.
 
 ## Publishing
 
