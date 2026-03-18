@@ -1,0 +1,7 @@
+{
+  "name": "worldmonitor-ai-wechat-digest",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Fetch World Monitor AI news, render a WeChat article, and publish to WeChat drafts."
+}
