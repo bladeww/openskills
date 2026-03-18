@@ -179,4 +179,4 @@ Each run should leave a clear trail inside `runs/<timestamp>/`:
 
 ## References
 
-Use [workflow.md](C:\Users\25263\.codex\skills\worldmonitor-ai-wechat-digest\references\workflow.md) if you need the exact article standard or the fetch/publish conventions.
+Use `references/workflow.md` if you need the exact article standard or the fetch/publish conventions.
